@@ -1,75 +1,65 @@
-/* MIT License
+pragma solidity ^0.5.0;
+/**For Ethereum*/
+import "https://github.com/niguezrandomityengine/ethereumAPI/nreAPI.sol";
 
-Copyright (c) 2018 fodisi
+contract Randomness is usingNRE {
+    function randomNumber() public view returns (uint256){
+       return (ra()%(10**10));
+   }
+}
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+contract owned {
+    address payable public owner;
+    // Contract constructor: set owner
+    constructor() public {
+        owner = msg.sender;
+    }
+    // Access control modifier: allow access only to owner
+    modifier onlyOwner {
+        require (msg.sender == owner) ;
+                _;
+    }
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+    modifier notOwner {
+        require (msg.sender != owner);
+        _;
+    }
+}
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
- */
+contract mortal is owned {
+    // Contract destructor
+    function destroy() public onlyOwner {
+        selfdestruct(owner);
+    }
+}
 
-pragma solidity ^0.4.24;
 
-/** @title CoinFlip
-    @author fodisi - https://github.com/fodisi/
-    @notice Contract for betting on the result of a coin flip (head or tail).
-    @dev The contract was crated using the specific logic (steps):
-    1. The owner/house opens a Betting Session specifying the characteristics
-    of the session: minimum bet, duration of the session (in minutes), 
-    house fee (%). Concurrent bets are not allowed.
-    2. Once a session is open, players can place the bets. However the bet must
-    be placed within the specified duration / timeframe of the betting session
-    (specified when the betting session was opened). After the session duration
-    ends, players cannot place bets.
-    3. The owner/house announces the result of the betting session and pays out
-    the winners. The result cannot be announced while the betting session is
-    opened. Once the result of the current betting session is announced, the 
-    owner/house will be allowed to open a new opened session.
-*/
-contract CoinFlip {
-    /* SECURITY NOTE: For simplicity reasons, this contract uses 
-    "block.timestamp" to compare timestamps durations and to generate
-    random numbers. This is a known security issue, but the decision to
-    use this design was made assuming this contract was written for
-    learning purposes only, and it is not going to be published on the
-    Ethereum main net.*/
-
-    // Defines the betting options. Head==0; Tail==1.
+contract CoinFlip is mortal {
     enum BetOption {HEAD, TAIL}
 
     event BetSessionOpened(uint sessionId, uint minimumBet, uint duration, uint openTimestamp);
     // Event to be raised when a new bet is placed.
+
     event NewBetPlaced(uint betSessionId, address player, uint amount, BetOption option);
     // Event to be raised when a new Result is announced for a bet session.
+
     event SessionResultAnnounced(
         uint betSessionId,
-        uint totalBetsCount, 
+        uint totalBetsCount,
         uint headBetsCount,
         uint tailBetsCount,
         BetOption betSessionResult
     );
-    
+
+
     // Represents a player's bet.
     struct Bet {
-        address player;
+        address payable player;
         uint amount;
         BetOption option;
     }
 
-    // Represents a bet session, where players can place bets following the session constraints.
+     // Represents a bet session, where players can place bets following the session constraints.
     struct BetSession {
         uint minimumBet;
         uint ownerFee;
@@ -81,9 +71,7 @@ contract CoinFlip {
         uint headsAmount;
         uint tailsAmount;
     }
-    
-    // The contract's instance owner.
-    address public owner;
+
     // Unique identifier for a bet session.
     uint private sessionIndex;
     //BetSession currentSession;
@@ -92,16 +80,8 @@ contract CoinFlip {
     mapping(uint => Bet[]) betsBySession;
     // Indicates if there's an ongoing session.
     bool ongoingSession = false;
-    
-    modifier onlyOwner() {
-        require(msg.sender == owner);
-        _;
-    }
+    Randomness private rand ;
 
-    modifier notOwner() {
-        require(msg.sender != owner);
-        _;
-    }
     modifier openForBets() {
         require(block.timestamp <= sessions[sessionIndex].openTimestamp + (sessions[sessionIndex].duration * 1 minutes));
         _;
@@ -110,12 +90,8 @@ contract CoinFlip {
     modifier closedForBets() {
         require(block.timestamp > sessions[sessionIndex].openTimestamp + (sessions[sessionIndex].duration * 1 minutes));
         _;
-    }    
-    
-    constructor() public {
-        owner = msg.sender;
     }
-    
+
     /** @dev Opens a session for bets.
         @param minAmount the minimum amount to be allowed when placing bets.
         @param duration the time frame duration that the session will be open for bets.
@@ -138,7 +114,8 @@ contract CoinFlip {
         sessionIndex = sessions.length - 1;
         emit BetSessionOpened(sessionIndex, minAmount, duration, openedAt);
     }
-    
+
+
     /** @dev Allows a player to place a bet on a specific outcome (head or tail).
         @param option Bet option chosen by the player. Allowed values are 0 (Heads) and 1 (Tails).
     */
@@ -177,7 +154,7 @@ contract CoinFlip {
             result
         );
     }
-    
+
     /** @dev Updates the stats of the current betting session.
         @param betOption Bet option chosen by the player.
         @param betAmount The amount the player bet.
@@ -199,9 +176,9 @@ contract CoinFlip {
     */
     function flipCoin() private view onlyOwner closedForBets returns (BetOption) {
         // PS: Known insecure random generation (designed for simplicity).
-        return BetOption(uint(keccak256(abi.encodePacked(block.timestamp, sessionIndex))) % 2);
+        return BetOption(uint(rand.randomNumber()) % 2);
     }
-    
+
     /** @dev Pays out the winners of the current betting session.
         @param result The result of the current bet session.
     */
@@ -228,7 +205,7 @@ contract CoinFlip {
                 // Gets the percentage/ratio of the player's bet,
                 // em relation to the amount betted on the winning result.
                 uint relativeBetSize = curBet.amount / winningBetAmount * 100;
-                // Calculates the prize for the player, considering its 
+                // Calculates the prize for the player, considering its
                 // stake (relativeBetSize) em relation to the total prize.
                 uint prize = totalPrize * relativeBetSize / 100;
                 // Pays the player.
@@ -248,5 +225,5 @@ contract CoinFlip {
     // of time by any player, in case owner did not announce winners within a specific time.
 
     // IMPROVEMENT IDEA - Add a function that allows self-destruction of the contract.
-    
+
 }
